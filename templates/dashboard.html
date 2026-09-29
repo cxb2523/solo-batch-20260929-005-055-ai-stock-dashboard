@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ view.ticker }} · 数据流追踪面板</title>
+  <style>
+    :root {
+      --bg: #0f1420;
+      --panel: #171e2e;
+      --panel2: #1d2638;
+      --line: #2a3550;
+      --text: #e6ebf5;
+      --muted: #8b97b0;
+      --accent: #4f8cff;
+      --green: #00c48c;
+      --red: #ff5c5c;
+      --amber: #ffb340;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.5 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    header.topbar {
+      padding: 18px 28px 12px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+    }
+    .topbar h1 { margin: 0 0 10px; font-size: 20px; }
+    form.inline { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    input[type=text], select {
+      background: var(--panel2);
+      border: 1px solid var(--line);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 14px;
+    }
+    button, .btn {
+      background: var(--accent);
+      color: #fff;
+      border: 0;
+      border-radius: 8px;
+      padding: 8px 14px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    button.secondary { background: var(--panel2); border: 1px solid var(--line); }
+    main { padding: 22px 28px 60px; max-width: 1280px; margin: 0 auto; }
+    section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; margin-bottom: 18px; }
+    section h2 { margin: 0 0 12px; font-size: 15px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+    .degraded {
+      border-color: #6b4e1f;
+      background: #231d12;
+      color: #ffd89b;
+      border-radius: 10px;
+      padding: 10px 14px;
+      margin-bottom: 16px;
+    }
+    .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+    .metric { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+    .metric .label { color: var(--muted); font-size: 12px; }
+    .metric .value { font-size: 22px; font-weight: 650; margin: 3px 0; }
+    .metric .delta.positive { color: var(--green); }
+    .metric .delta.negative { color: var(--red); }
+    .tabs-nav { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+    .tabs-nav button { background: var(--panel2); border: 1px solid var(--line); }
+    .tabs-nav button.active { background: var(--accent); border-color: var(--accent); }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    table { border-collapse: collapse; width: 100%; font-size: 13px; }
+    th, td { border-bottom: 1px solid var(--line); padding: 7px 9px; text-align: right; white-space: nowrap; }
+    th:first-child, td:first-child { text-align: left; }
+    th { color: var(--muted); font-weight: 500; }
+    .placeholder { color: var(--amber); background: var(--panel2); border: 1px dashed #6b4e1f; border-radius: 10px; padding: 16px; }
+    .placeholder-small { color: var(--muted); padding: 10px 0; }
+    ul.insights { margin: 0; padding-left: 4px; list-style: none; }
+    ul.insights li { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; margin-bottom: 8px; }
+    .badge { display: inline-block; border-radius: 999px; padding: 2px 10px; font-size: 12px; margin-left: 8px; }
+    .badge.ok { background: rgba(0,196,140,.15); color: var(--green); }
+    .badge.degraded { background: rgba(255,179,64,.15); color: var(--amber); }
+    .badge.error { background: rgba(255,92,92,.15); color: var(--red); }
+    .badge.reuse { background: rgba(79,140,255,.18); color: #9dbdff; }
+    table.trace td.mono, table.trace th { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+    .stage-name { font-weight: 650; }
+    .ms { font-variant-numeric: tabular-nums; }
+    .exception { color: var(--red); font-size: 12px; word-break: break-all; }
+    .colist { color: var(--muted); font-size: 12px; word-break: break-all; }
+    .history-row { cursor: pointer; }
+    .pill { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; margin-right: 6px; }
+    .grid2 { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; }
+    @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+    .spark { background: var(--panel2); border-radius: 10px; }
+  </style>
+</head>
+<body>
+<header class="topbar">
+  <h1>📈 股票数据流追踪面板
+    <span class="pill">{{ view.data_range.rows }} 行</span>
+    <span class="pill">{{ view.data_range.start }} → {{ view.data_range.end }}</span>
+    <span class="pill">tz: {{ view.data_range.timezone }}</span>
+  </h1>
+  <form class="inline" method="get" action="/">
+    <input type="text" name="ticker" value="{{ view.ticker }}" maxlength="10" style="width:120px" autofocus>
+    <select name="period">
+      {% for p in periods %}
+      <option value="{{ p }}" {% if p == view.period %}selected{% endif %}>{{ p }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit">切换 ticker</button>
+    <button class="secondary" type="submit" name="refresh" value="1">强制刷新（绕过缓存）</button>
+  </form>
+</header>
+
+<main>
+  {% if result.degraded %}
+  <div class="degraded">
+    <strong>⚠️ 本次运行存在降级：</strong>
+    <ul style="margin:6px 0 0 18px; padding:0">
+      {% for note in result.errors %}<li>{{ note }}</li>{% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <section>
+    <h2>头部指标 · run {{ run.run_id }} · 总耗时 {{ run.duration_ms }} ms
+      <span class="badge {{ 'degraded' if result.degraded else 'ok' }}">{{ run.status }}</span>
+    </h2>
+    <div class="metrics">
+      {% for metric in view.metrics %}
+      <div class="metric">
+        <div class="label">{{ metric.label }}</div>
+        <div class="value">{{ metric.value }}</div>
+        {% if metric.delta %}<div class="delta {{ metric.tone }}">{{ metric.delta }}</div>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section>
+    <h2>标签页</h2>
+    <div class="tabs-nav">
+      {% for tab in view.tabs %}
+      <button type="button" class="{% if loop.first %}active{% endif %}"
+              onclick="showTab('tab-{{ tab.key }}', this)">{{ tab.title }}</button>
+      {% endfor %}
+    </div>
+
+    {% for tab in view.tabs %}
+    <div class="tab-panel {% if loop.first %}active{% endif %}" id="tab-{{ tab.key }}">
+      {% if tab.is_placeholder %}
+      <div class="placeholder">⚠️ {{ tab.placeholder }}</div>
+      {% elif tab.key == 'price' %}
+      <div class="grid2">
+        <div>{{ tab.payload.chart | safe }}</div>
+        <table>
+          <tr><th>日期</th><th>开</th><th>高</th><th>低</th><th>收</th><th>量</th></tr>
+          {% for row in tab.payload.rows %}
+          <tr><td>{{ row.date }}</td><td>{{ row.open }}</td><td>{{ row.high }}</td><td>{{ row.low }}</td><td>{{ row.close }}</td><td>{{ row.volume }}</td></tr>
+          {% endfor %}
+        </table>
+      </div>
+      {% elif tab.key == 'technical' %}
+      <div class="grid2">
+        <div>
+          <strong>RSI 近 120 日</strong>
+          {{ tab.payload.rsi_chart | safe }}
+          {% set perf = tab.payload.performance %}
+          <div class="metrics" style="margin-top:10px">
+            <div class="metric"><div class="label">总收益</div><div class="value">{{ perf.total_return }}</div></div>
+            <div class="metric"><div class="label">年化波动</div><div class="value">{{ perf.volatility }}</div></div>
+            <div class="metric"><div class="label">夏普</div><div class="value">{{ perf.sharpe }}</div></div>
+            <div class="metric"><div class="label">最大回撤</div><div class="value">{{ perf.max_drawdown }}</div></div>
+          </div>
+        </div>
+        <table>
+          <tr><th>日期</th>{% for c in tab.payload.columns %}<th>{{ c }}</th>{% endfor %}</tr>
+          {% for row in tab.payload.rows %}
+          <tr><td>{{ row.date }}</td>{% for c in tab.payload.columns %}<td>{{ row[c] }}</td>{% endfor %}</tr>
+          {% endfor %}
+        </table>
+      </div>
+      {% elif tab.key == 'prediction' %}
+      <div class="grid2">
+        <div>
+          <div class="metrics">
+            <div class="metric"><div class="label">下一日预测收盘</div><div class="value">{{ tab.payload.prediction }}</div><div class="delta">{{ tab.payload.change }}</div></div>
+            <div class="metric"><div class="label">训练 R²</div><div class="value">{{ tab.payload.train_score }}</div></div>
+            <div class="metric"><div class="label">测试 R²</div><div class="value">{{ tab.payload.test_score }}</div></div>
+            <div class="metric"><div class="label">有效样本</div><div class="value">{{ tab.payload.n_samples }}</div></div>
+          </div>
+        </div>
+        <table>
+          <tr><th>特征</th><th>重要性</th></tr>
+          {% for name, imp in tab.payload.features %}
+          <tr><td>{{ name }}</td><td>{{ '%.4f' | format(imp) }}</td></tr>
+          {% endfor %}
+        </table>
+      </div>
+      {% elif tab.key == 'ai' %}
+      <p>
+        来源：<strong>{{ tab.payload.source }}</strong>
+        {% if tab.payload.degraded %}<span class="badge degraded">降级</span>{% endif %}
+      </p>
+      {% if tab.payload.message %}<div class="degraded">{{ tab.payload.message }}</div>{% endif %}
+      <ul class="insights">
+        {% for line in tab.payload.insights %}<li>{{ line }}</li>{% endfor %}
+      </ul>
+      {% elif tab.key == 'company' %}
+      <table>
+        {% for label, value in tab.payload.rows %}
+        <tr><th>{{ label }}</th><td style="text-align:left">{{ value }}</td></tr>
+        {% endfor %}
+      </table>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </section>
+
+  <section>
+    <h2>阶段 trace（fetch → indicators → predict → ai → render）</h2>
+    <table class="trace">
+      <tr>
+        <th>阶段</th><th>状态</th><th class="mono">耗时</th>
+        <th>输入列 / 时区 / 行数</th><th>输出列 / 时区 / 行数</th><th>说明</th>
+      </tr>
+      {% for stage in stages %}
+      <tr>
+        <td class="stage-name">{{ stage.stage }}</td>
+        <td>
+          {% if stage.status == 'error' %}<span class="badge error">error</span>
+          {% elif stage.degraded %}<span class="badge degraded">degraded</span>
+          {% else %}<span class="badge ok">ok</span>{% endif %}
+          {% if stage.reused %}<span class="badge reuse">复用</span>{% endif %}
+        </td>
+        <td class="ms">{{ stage.duration_ms }} ms</td>
+        <td>
+          <div class="colist">{{ stage.input_columns | join(', ') if stage.input_columns else '—' }}</div>
+          <div class="colist">{{ stage.input_timezone or 'tz:—' }} · {{ stage.input_rows }} 行</div>
+        </td>
+        <td>
+          <div class="colist">{{ stage.output_columns | join(', ') if stage.output_columns else '—' }}</div>
+          <div class="colist">{{ stage.output_timezone or 'tz:—' }} · {{ stage.output_rows }} 行</div>
+        </td>
+        <td style="text-align:left">
+          {{ stage.message }}
+          {% if stage.exception %}<div class="exception">{{ stage.exception }}</div>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </section>
+
+  <section>
+    <h2>该 ticker 最近运行（换 ticker 后耗时/降级随之变化）</h2>
+    <table class="trace">
+      <tr><th>run</th><th>时间</th><th>周期</th><th>总耗时</th><th>状态</th><th>各阶段耗时</th></tr>
+      {% for past in history %}
+      <tr class="history-row">
+        <td class="mono">{{ past.run_id }}</td>
+        <td>{{ past.started_at | round | int }}</td>
+        <td>{{ past.period }}{% if past.force_refresh %} 🔄{% endif %}</td>
+        <td class="ms">{{ past.duration_ms }} ms</td>
+        <td><span class="badge {{ 'degraded' if past.status == 'degraded' else 'ok' }}">{{ past.status }}</span></td>
+        <td class="ms">
+          {% for s in past.stages %}{{ s.stage }}:{{ s.duration_ms }}ms{% if not loop.last %} · {% endif %}{% endfor %}
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+    <p style="margin-top:10px"><a href="/trace/{{ view.ticker }}">查看 JSON trace →</a></p>
+  </section>
+</main>
+
+<script>
+  function showTab(id, btn) {
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.tabs-nav button').forEach(b => b.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    btn.classList.add('active');
+  }
+</script>
+</body>
+</html>

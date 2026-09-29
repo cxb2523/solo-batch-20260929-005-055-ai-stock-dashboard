@@ -39,6 +39,50 @@ A comprehensive, AI-powered stock market dashboard that combines advanced techni
 
 ![Technical Analysis](screenshots/technical_analysis.jpg)
 
+## 🧩 数据流架构与追踪（dataflow）
+
+原本糊在 `stock_dashboard.py` 里的逻辑被拆成 `dataflow/` 包，五个阶段各留一个 trace 钩子，
+记录**输入列名、时区、行数、耗时与异常**：
+
+```text
+ticker 输入 -> fetch -> indicators -> predict -> ai -> render
+             (dataflow/fetch.py) (indicators.py) (predict.py) (ai.py) (render.py)
+```
+
+- `dataflow/trace.py`：`RunTrace` / `StageTrace` / `TraceStore`（按 ticker 的环形缓冲）
+- `dataflow/cache.py`：新鲜 TTL + 陈旧回退缓存、数据指纹
+- `dataflow/pipeline.py`：五段编排，单段异常被捕获并转成标签页占位，整页不崩
+
+### 三个工程取舍（已落进代码）
+
+1. **缓存粒度**：历史 K 线缓存键 = `ticker + start/end 日期区间`（`period` 在请求时换算，
+   见 `fetch.resolve_range` / `history_cache_key`），避免“1y”命中旧缓存后区间永不滚动；
+   最新行情走独立的短 TTL 缓存。新鲜 TTL 内命中即复用（视为含最新收盘），
+   过期/强制刷新才取新；取新失败时在陈旧宽限 TTL 内回退上一份并单独计数 `stale`。
+   TTL 可用 `DATAFLOW_HISTORY_TTL`、`DATAFLOW_QUOTE_TTL` 等环境变量覆盖。
+2. **AI 降级**：缺 `OPENAI_API_KEY` / `DATAFLOW_AI_API_KEY` 时不请求网络，
+   AI 标签页显示本地规则分析（占位）；有密钥但请求失败时优先复用同 ticker 的旧 AI 缓存，
+   再退化为本地占位。任意单段异常都不会让整页崩掉。
+3. **刷新复用**：普通刷新时 `fetch` 由 TTL 决定是否取新；`indicators` / `predict` / `ai`
+   按输入数据指纹复用（trace 中带“复用”徽标），`render` 永远重算；
+   “强制刷新”绕过所有缓存。指标在样本不足或除零时一律返回 **NaN**，不抛异常。
+
+### 追踪面板与测试
+
+```bash
+# Flask 追踪面板：按 ticker 展示各阶段实际数据、行数、时区、耗时与降级提示
+python trace_app.py                  # http://127.0.0.1:5000
+DATAFLOW_DEMO=1 python trace_app.py  # 无网络时用内置合成数据演示（EMPTY 可看空数据降级）
+
+# 测试（含空数据、单行、除零、缓存命中次数断言）
+python -m pytest -q
+
+# 原 Streamlit 入口保留，现在只是 dataflow 的薄封装
+streamlit run stock_dashboard.py
+```
+
+JSON trace：`GET /trace/<TICKER>`，健康检查：`GET /healthz`。
+
 ## 🚀 Quick Start
 
 ### Prerequisites
