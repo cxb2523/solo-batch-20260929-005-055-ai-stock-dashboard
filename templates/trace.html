@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stock Dataflow Trace · {{ ticker }}</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+  <style>
+    :root {
+      --bg: #0f1420; --panel: #181f2e; --panel2: #1f2839;
+      --text: #e6ebf5; --muted: #8a97ab; --line: #2a3550;
+      --ok: #2ecc71; --warn: #f39c12; --err: #e74c3c;
+      --accent: #4f8cff; --violet: #af52de;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font: 14px/1.55 "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    header {
+      padding: 14px 22px; background: var(--panel);
+      border-bottom: 1px solid var(--line);
+      display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+    }
+    header h1 { font-size: 17px; margin: 0 18px 0 0; }
+    form { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    input, select, button {
+      background: var(--panel2); color: var(--text);
+      border: 1px solid var(--line); border-radius: 7px;
+      padding: 7px 10px; font-size: 13px;
+    }
+    button { cursor: pointer; border-color: var(--accent); color: #cfe0ff; }
+    button:hover { background: #26344f; }
+    .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+    .chip {
+      padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line);
+      color: var(--muted); text-decoration: none; font-size: 12px;
+    }
+    .chip.active { color: #cfe0ff; border-color: var(--accent); background: #1d2a45; }
+    main { padding: 18px 22px 40px; max-width: 1280px; margin: 0 auto; }
+    .banner {
+      padding: 9px 13px; border-radius: 8px; margin: 8px 0;
+      background: #33281a; border: 1px solid #6b5322; color: #f6d9a8;
+    }
+    .banner.info { background: #1d2a45; border-color: #2f4a80; color: #cfe0ff; }
+    h2 { font-size: 14px; color: var(--muted); margin: 22px 0 8px;
+         text-transform: uppercase; letter-spacing: .06em; }
+    .stages { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+    .stage {
+      background: var(--panel); border: 1px solid var(--line);
+      border-radius: 10px; padding: 11px 12px; min-height: 118px;
+    }
+    .stage .name { font-weight: 600; display: flex; justify-content: space-between; }
+    .stage .ms { color: var(--accent); font-variant-numeric: tabular-nums; }
+    .stage ul { margin: 7px 0 0; padding-left: 16px; color: var(--muted);
+                font-size: 12px; }
+    .stage .err { color: #f5a3a3; font-size: 12px; margin-top: 6px;
+                  word-break: break-word; }
+    .stage .note { color: #b7c7e6; font-size: 12px; margin-top: 6px; }
+    .badge { font-size: 11px; padding: 1px 8px; border-radius: 999px; }
+    .badge.ok { background: #17432b; color: #88e0a0; }
+    .badge.degraded { background: #4a3812; color: #f5cd7e; }
+    .badge.error { background: #4a1c1c; color: #f3a0a0; }
+    .badge.skipped { background: #323a4d; color: #aab6cc; }
+    .details {
+      margin-top: 10px; background: var(--panel); border: 1px solid var(--line);
+      border-radius: 10px; padding: 6px 14px 14px;
+    }
+    .details summary { cursor: pointer; padding: 10px 0; color: var(--muted); }
+    pre {
+      background: #0b101a; border: 1px solid var(--line); border-radius: 8px;
+      padding: 10px; overflow-x: auto; font-size: 12px; color: #b9c6de;
+    }
+    .stats { display: flex; gap: 18px; color: var(--muted); font-size: 12px;
+            margin: 6px 0 4px; flex-wrap: wrap; }
+    .stats b { color: var(--text); }
+    .tabs { margin-top: 18px; }
+    .tabbar { display: flex; gap: 4px; flex-wrap: wrap; }
+    .tabbtn {
+      border: 1px solid var(--line); border-bottom: none;
+      background: var(--panel2); border-radius: 8px 8px 0 0;
+      padding: 8px 14px; color: var(--muted); cursor: pointer;
+    }
+    .tabbtn.active { background: var(--panel); color: var(--text); }
+    .tabpanel {
+      display: none; background: var(--panel); border: 1px solid var(--line);
+      border-radius: 0 10px 10px 10px; padding: 16px; min-height: 240px;
+    }
+    .tabpanel.active { display: block; }
+    .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap: 10px; }
+    .metric { background: var(--panel2); border: 1px solid var(--line);
+              border-radius: 9px; padding: 10px 12px; }
+    .metric .k { color: var(--muted); font-size: 12px; }
+    .metric .v { font-size: 19px; font-weight: 600; margin-top: 2px;
+                 font-variant-numeric: tabular-nums; }
+    .up { color: var(--ok); } .down { color: var(--err); }
+    table { border-collapse: collapse; width: 100%; font-size: 12px; }
+    th, td { border-bottom: 1px solid var(--line); padding: 5px 8px;
+             text-align: right; font-variant-numeric: tabular-nums; }
+    th:first-child, td:first-child { text-align: left; }
+    .chart { width: 100%; height: 420px; margin-top: 8px; }
+    .subchart { width: 100%; height: 230px; margin-top: 12px; }
+    ul.bullets li { margin: 6px 0; }
+    .muted { color: var(--muted); }
+    .src-tag { font-size: 11px; color: var(--violet); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>📈 Stock Dataflow Trace</h1>
+    <form method="get" action="/">
+      <input name="ticker" value="{{ ticker }}" placeholder="ticker，如 AAPL"
+             size="10" autofocus>
+      <select name="period">
+        {% for p in periods %}
+        <option value="{{ p }}" {% if p == period %}selected{% endif %}>{{ p }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit">切换 / 刷新</button>
+    </form>
+    <div class="chips">
+      {% for t in tickers %}
+      <a class="chip {% if t == ticker %}active{% endif %}"
+         href="/?ticker={{ t }}&period={{ period }}">{{ t }}</a>
+      {% endfor %}
+    </div>
+  </header>
+  <main>
+    <div id="banners"></div>
+    <div class="stats" id="stats"></div>
+    <h2>阶段 Trace（fetch · indicators · predict · ai · render）</h2>
+    <div class="stages" id="stages"></div>
+    <div class="details">
+      <summary>展开查看每个阶段的完整 trace JSON（输入列名 / 时区 / 行数 / 输出）</summary>
+      <pre id="trace-json"></pre>
+    </div>
+    <div class="tabs" id="tabs"></div>
+  </main>
+  <script>
+    const TICKER = {{ ticker|tojson }};
+    const PERIOD = {{ period|tojson }};
+
+    function fmt(v, digits = 2) {
+      if (v === null || v === undefined || Number.isNaN(v)) return "NaN";
+      return Number(v).toLocaleString(undefined, {
+        minimumFractionDigits: digits, maximumFractionDigits: digits,
+      });
+    }
+    function stageSummary(stage) {
+      const out = stage.output || {};
+      const lines = [];
+      if (out.type === "DataFrame" || (out.quotes && out.quotes.type === "DataFrame")) {
+        const df = out.quotes || out;
+        lines.push(`输出 ${df.rows} 行 × ${df.n_columns} 列`);
+        if (df.timezone) lines.push(`时区 ${df.timezone}`);
+      }
+      if (out.source) lines.push(`来源: ${out.source}`);
+      if (out.prediction !== undefined) {
+        lines.push(`预测: ${fmt(out.prediction)}（样本 ${out.n_train_rows || 0}）`);
+      }
+      if (Array.isArray(out.bullets)) lines.push(`结论 ${out.bullets.length} 条（${out.source}）`);
+      if (Array.isArray(out.tabs)) {
+        lines.push(out.tabs.map(t => `${t.id}:${t.status}`).join("  "));
+      }
+      if (stage.inputs) {
+        const ins = stage.inputs;
+        if (ins.quotes && ins.quotes.rows !== undefined) {
+          lines.push(`输入 ${ins.quotes.rows} 行, ${ins.quotes.n_columns} 列`);
+        }
+        if (ins.memo) lines.push(`memo: ${ins.memo}`);
+      }
+      return lines;
+    }
+
+    function renderStages(stages) {
+      const host = document.getElementById("stages");
+      host.innerHTML = "";
+      for (const st of stages) {
+        const card = document.createElement("div");
+        card.className = "stage";
+        const ul = stageSummary(st).map(l => `<li>${escapeHtml(l)}</li>`).join("");
+        card.innerHTML = `
+          <div class="name">
+            <span>${st.stage}</span>
+            <span class="ms">${st.elapsed_ms === null ? "-" : st.elapsed_ms.toFixed(2)} ms</span>
+          </div>
+          <div style="margin-top:6px">
+            <span class="badge ${st.status}">${st.status}</span>
+          </div>
+          <ul>${ul}</ul>
+          ${st.note ? `<div class="note">${escapeHtml(st.note)}</div>` : ""}
+          ${st.error ? `<div class="err">${escapeHtml(st.error)}</div>` : ""}`;
+        host.appendChild(card);
+      }
+    }
+
+    function renderBanners(banners, source) {
+      const host = document.getElementById("banners");
+      const all = [];
+      if (source === "network") all.push(["info", `${TICKER}：实时行情拉取成功（network）。`]);
+      for (const b of banners || []) all.push(["warn", b]);
+      host.innerHTML = all.map(([cls, text]) =>
+        `<div class="banner ${cls === "info" ? "info" : ""}">${escapeHtml(text)}</div>`).join("");
+    }
+
+    function renderStats(p) {
+      const c = p.cache_stats || {}, m = p.memo_stats || {};
+      document.getElementById("stats").innerHTML =
+        `<span>行情来源 <b>${p.quote_source}</b></span>` +
+        `<span>缓存 fresh_hits=<b>${c.fresh_hits || 0}</b> stores=<b>${c.stores || 0}</b> ` +
+        `stale_fallbacks=<b>${c.stale_fallbacks || 0}</b></span>` +
+        `<span>计算 memo hits=<b>${m.hits || 0}</b> misses=<b>${m.misses || 0}</b></span>`;
+    }
+
+    function escapeHtml(s) {
+      return String(s ?? "").replace(/[&<>"']/g, ch =>
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+    }
+
+    function metric(k, v, cls) {
+      return `<div class="metric"><div class="k">${escapeHtml(k)}</div>
+        <div class="v ${cls || ""}">${v}</div></div>`;
+    }
+    function dataTable(tbl) {
+      if (!tbl || !tbl.rows) return "<span class='muted'>无数据</span>";
+      const head = tbl.columns.map(c => `<th>${escapeHtml(c)}</th>`).join("");
+      const rows = tbl.rows.slice(-15).reverse().map(r =>
+        "<tr>" + r.map((c, i) =>
+          `<td>${i === 0 ? escapeHtml(c) : (c === null ? "NaN" : fmt(c, 2))}</td>`).join("") +
+        "</tr>").join("");
+      return `<table><thead><tr><th>时间</th>${head}</tr></thead><tbody>${rows}</tbody></table>`;
+    }
+
+    function tabContent(tab) {
+      const p = tab.payload || {};
+      if (tab.status === "error") {
+        return `<div class="banner">标签渲染失败，已隔离：${escapeHtml(tab.error || "")}</div>`;
+      }
+      if (p.placeholder !== undefined && typeof p.placeholder === "string") {
+        return `<div class="banner">${escapeHtml(p.placeholder)}</div>`;
+      }
+      if (tab.id === "overview") {
+        const m = p.metrics || {};
+        const cls = m.change_pct > 0 ? "up" : m.change_pct < 0 ? "down" : "";
+        return `<div class="metrics">
+          ${metric("最新收盘", "$" + fmt(m.latest_close), cls)}
+          ${metric("日涨跌", fmt(m.change) + " (" + fmt(m.change_pct) + "%)", cls)}
+          ${metric("RSI(14)", fmt(m.rsi, 1))}
+          ${metric("MACD", fmt(m.macd, 3))}
+          ${metric("成交量", m.volume === null ? "NaN" : Number(m.volume).toLocaleString())}
+          ${metric("量 vs 20日均", fmt(m.volume_vs_avg_pct) + "%")}
+          ${metric("市值", m.market_cap === null ? "NaN" : "$" +
+            (m.market_cap >= 1e12 ? fmt(m.market_cap / 1e12) + "T"
+             : fmt(m.market_cap / 1e9) + "B"))}
+        </div>`;
+      }
+      if (tab.id === "chart") {
+        return `<div id="chart-main" class="chart"></div>` +
+          (p.subplots || []).map((s, i) =>
+            `<h3 class="muted">${escapeHtml(s.title)}</h3>
+             <div id="sub-${i}" class="subchart"></div>`).join("");
+      }
+      if (tab.id === "performance") {
+        const m = p.metrics || {};
+        const cls = (m.total_return_pct || 0) >= 0 ? "up" : "down";
+        return `<div class="metrics">
+          ${metric("总收益", fmt(m.total_return_pct) + "%", cls)}
+          ${metric("年化波动", fmt(m.volatility_annual_pct) + "%")}
+          ${metric("年化夏普", fmt(m.sharpe_annual, 3))}
+          ${metric("最大回撤", fmt(m.max_drawdown_pct) + "%", "down")}
+          ${metric("样本日数", m.observations)}</div>
+          <div id="chart-cum" class="chart"></div>`;
+      }
+      if (tab.id === "prediction") {
+        const cls = (p.predicted_change_pct || 0) >= 0 ? "up" : "down";
+        return `<div class="metrics">
+          ${metric("次日预测收盘", "$" + fmt(p.prediction), cls)}
+          ${metric("预测涨跌", fmt(p.predicted_change_pct) + "%", cls)}
+          ${metric("当前收盘", "$" + fmt(p.current_price))}
+          ${metric("训练 R²", fmt(p.train_score, 3))}
+          ${metric("测试 R²", fmt(p.test_score, 3))}
+          ${metric("训练样本", p.n_train_rows)}</div>
+          <h3 class="muted">Top 10 特征重要性</h3>
+          <div id="chart-imp" class="chart"></div>`;
+      }
+      if (tab.id === "ai") {
+        return `<h3>${escapeHtml(p.headline || "")}
+          <span class="src-tag">[来源: ${escapeHtml(p.source || "")}${p.model ? " / " +
+            escapeHtml(p.model) : ""}]</span></h3>
+          <ul class="bullets">${(p.bullets || []).map(b =>
+            `<li>${escapeHtml(b)}</li>`).join("")}</ul>` +
+          (p.warnings || []).map(w => `<div class="banner">${escapeHtml(w)}</div>`).join("");
+      }
+      if (tab.id === "data") {
+        return `<h3 class="muted">原始行情（近15行，共 ${p.n_rows} 行）</h3>${dataTable(p.raw)}
+          <h3 class="muted" style="margin-top:14px">技术指标</h3>${dataTable(p.indicators)}`;
+      }
+      return "";
+    }
+
+    function drawCharts(tabs) {
+      const chartTab = tabs.find(t => t.id === "chart");
+      if (chartTab && chartTab.status === "ok") {
+        const p = chartTab.payload;
+        Plotly.newPlot("chart-main", p.traces,
+          { title: p.title, template: "plotly_dark",
+            xaxis: { rangeslider: { visible: false } }, margin: { t: 40 } },
+          { responsive: true, displaylogo: false });
+        (p.subplots || []).forEach((sp, i) => {
+          const layout = { title: sp.title, template: "plotly_dark",
+            margin: { t: 36 }, showlegend: true };
+          if (sp.hlines) layout.shapes = sp.hlines.map(h =>
+            ({ type: "line", xref: "paper", x0: 0, x1: 1, y0: h.y, y1: h.y,
+               line: { dash: "dot", color: "#888" } }));
+          Plotly.newPlot("sub-" + i, sp.traces, layout,
+            { responsive: true, displaylogo: false });
+        });
+      }
+      const perfTab = tabs.find(t => t.id === "performance");
+      if (perfTab && perfTab.status === "ok" && perfTab.payload.cumulative_chart) {
+        Plotly.newPlot("chart-cum", [perfTab.payload.cumulative_chart],
+          { template: "plotly_dark", yaxis: { title: "%" }, margin: { t: 20 } },
+          { responsive: true, displaylogo: false });
+      }
+      const predTab = tabs.find(t => t.id === "prediction");
+      if (predTab && predTab.status === "ok" && predTab.payload.importance_chart) {
+        const ch = predTab.payload.importance_chart;
+        Plotly.newPlot("chart-imp", [{ ...ch, type: "bar" }],
+          { template: "plotly_dark", margin: { l: 160, t: 10 },
+            xaxis: { title: "重要性" } },
+          { responsive: true, displaylogo: false });
+      }
+    }
+
+    function renderTabs(tabs) {
+      const host = document.getElementById("tabs");
+      host.innerHTML = '<div class="tabbar" id="tabbar"></div>';
+      tabs.forEach((tab, i) => {
+        const btn = document.createElement("div");
+        btn.className = "tabbtn" + (i === 0 ? " active" : "");
+        btn.textContent = tab.title +
+          (tab.status === "error" ? " ⚠" : tab.status === "degraded" ? " ·" : "");
+        btn.onclick = () => {
+          document.querySelectorAll(".tabbtn").forEach(b => b.classList.remove("active"));
+          document.querySelectorAll(".tabpanel").forEach(p => p.classList.remove("active"));
+          btn.classList.add("active");
+          document.getElementById("panel-" + tab.id).classList.add("active");
+        };
+        host.appendChild(btn);
+        const panel = document.createElement("div");
+        panel.id = "panel-" + tab.id;
+        panel.className = "tabpanel" + (i === 0 ? " active" : "");
+        panel.innerHTML = tabContent(tab);
+        host.appendChild(panel);
+      });
+      drawCharts(tabs);
+    }
+
+    async function load() {
+      const resp = await fetch(`/api/run?ticker=${encodeURIComponent(TICKER)}&period=${PERIOD}`);
+      const p = await resp.json();
+      renderBanners(p.banners, p.quote_source);
+      renderStages(p.stages);
+      renderStats(p);
+      document.getElementById("trace-json").textContent =
+        JSON.stringify(p.stages, null, 2);
+      renderTabs(p.tabs);
+    }
+    load();
+  </script>
+</body>
+</html>

@@ -11,6 +11,55 @@ A comprehensive, AI-powered stock market dashboard that combines advanced techni
 
 ![Main Dashboard](screenshots/main_dashboard.jpg)
 
+---
+
+## 🔎 Dataflow Trace 模式（`dataflow/` + `trace_app.py`）
+
+原 `stock_dashboard.py` 把 ticker 输入、yfinance 拉取/缓存、RSI/MACD/布林带、
+ML 预测、AI 调用、多标签页渲染全糊在一起。现已拆成五阶段流水线，每段一个
+统一 trace 钩子（输入列名、时区、行数、耗时、异常全部可查）：
+
+```
+dataflow/
+  config.py       # 全局配置（TTL、AI 密钥、最小训练样本等，支持环境变量）
+  trace.py        # Tracer / StageTrace：with tracer.step(...) 记录一切
+  cache.py        # QuoteCache（行情缓存）+ FingerprintMemo（计算结果复用）
+  fetch.py        # ticker -> yfinance -> 缓存/旧缓存/demo 降级
+  indicators.py   # SMA/EMA/MACD/RSI/布林带/ATR/Stoch，除零一律 NaN
+  predict.py      # 特征工程 + RandomForest，样本不足返回 NaN 预测
+  ai.py           # OpenAI 兼容调用，缺密钥/失败 -> 本地规则，不跳标签
+  render.py       # 六个标签页独立渲染，单标签异常只隔离该标签
+  pipeline.py     # 五阶段编排 + per-stage 兜底，整页永不崩
+trace_app.py      # Flask(5050)：按 ticker 展示各阶段耗时/数据/降级横幅
+templates/trace.html
+tests/            # pytest：空数据、单行、除零、缓存命中次数、降级、切 ticker
+```
+
+### 三个关键取舍（已落进代码）
+
+1. **缓存键粒度 = ticker + UTC 日期区间**：`period="1y"` 是滑动窗口，
+   不同日期含义不同，因此先归一化成 `(ticker, start_date, end_date)`
+   （`cache.quote_key`）。
+2. **命中 vs 最新 & AI 失败策略**：默认 60s TTL（`STOCK_QUOTE_TTL`）内
+   命中即复用不联网；过期后联网，失败按 `stale-if-error` 回退旧缓存；
+   再失败用内置合成数据占位（页面显著标注 DEMO）。AI 缺密钥不发请求、
+   请求失败退回本地规则——**标签页永远保留**，只在横幅与标签上标降级。
+3. **刷新复用边界**：行情按 TTL 复用；指标/预测/AI 按输入**内容指纹**
+   memo，行情不变就不重算/不重训/不重复调用；渲染每次刷新都重算。
+   指标样本不足或除零（零量、平盘）一律返回 NaN，不抛异常。
+
+### 运行
+
+```bash
+python -m pytest -q          # 全部单测（含缓存命中次数断言）
+python trace_app.py          # http://127.0.0.1:5050 ，换 ticker 观察耗时/降级
+```
+
+可选环境变量：`STOCK_QUOTE_TTL`、`STOCK_CACHE_PATH`、`STOCK_DEMO_FALLBACK=0`、
+`OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL`、`ML_MIN_TRAIN_ROWS`。
+
+---
+
 ## ✨ Features
 
 ### 🤖 **Artificial Intelligence**
